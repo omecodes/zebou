@@ -1,6 +1,7 @@
 package zebou
 
 import (
+	"github.com/google/uuid"
 	"github.com/omecodes/common/doer"
 	"github.com/omecodes/common/log"
 	pb "github.com/omecodes/zebou/proto"
@@ -9,15 +10,18 @@ import (
 	"sync"
 )
 
+type sessionMessageHandlerFunc func(from int, msg *pb.SyncMessage)
+
 func Serve(l net.Listener, messages pb.Messages) (doer.Stopper, error) {
 	if messages == nil {
 		messages = newMemMessageStore()
 	}
+
 	h := &server{
 		messages:           messages,
 		stopRequested:      false,
-		broadcastReceivers: map[int]chan *pb.SyncMessage{},
-		stoppers:           map[int]doer.Stopper{},
+		broadcastReceivers: map[string]chan *pb.SyncMessage{},
+		stoppers:           map[string]doer.Stopper{},
 	}
 
 	server := grpc.NewServer()
@@ -35,19 +39,17 @@ func Serve(l net.Listener, messages pb.Messages) (doer.Stopper, error) {
 type server struct {
 	broadcastMutex     sync.Mutex
 	stopMutex          sync.Mutex
-	keyCounter         int
 	messages           pb.Messages
 	stopRequested      bool
-	stoppers           map[int]doer.Stopper
-	broadcastReceivers map[int]chan *pb.SyncMessage
+	stoppers           map[string]doer.Stopper
+	broadcastReceivers map[string]chan *pb.SyncMessage
 }
 
 func (s *server) Sync(stream pb.Nodes_SyncServer) error {
-	broadcastReceiver := make(chan *pb.SyncMessage, 30)
-	sess := NewServerStreamSession(stream, broadcastReceiver, s.messages, pb.MessageHandlerFunc(s.Handle))
+	broadcastReceiver := make(chan *pb.SyncMessage)
 	id := s.saveBroadcastReceiver(broadcastReceiver)
+	sess := NewServerStreamSession(stream, broadcastReceiver, s.messages, pb.MessageHandlerFunc(s.Handle))
 	s.saveStopper(id, sess)
-
 	defer s.deleteBroadcastReceiver(id)
 	defer s.stop(id)
 	sess.sync()
@@ -57,24 +59,22 @@ func (s *server) Sync(stream pb.Nodes_SyncServer) error {
 func (s *server) Handle(msg *pb.SyncMessage) {
 	s.broadcastMutex.Lock()
 	defer s.broadcastMutex.Unlock()
-	for _, r := range s.broadcastReceivers {
-		r <- msg
-	}
 	err := s.messages.Handle(msg)
 	if err != nil {
 		log.Error("could not save message", err)
 	}
 }
 
-func (s *server) saveBroadcastReceiver(channel chan *pb.SyncMessage) int {
+func (s *server) saveBroadcastReceiver(channel chan *pb.SyncMessage) string {
 	s.broadcastMutex.Lock()
 	defer s.broadcastMutex.Unlock()
-	s.keyCounter++
-	s.broadcastReceivers[s.keyCounter] = channel
-	return s.keyCounter
+
+	id := uuid.New().String()
+	s.broadcastReceivers[id] = channel
+	return id
 }
 
-func (s *server) deleteBroadcastReceiver(key int) {
+func (s *server) deleteBroadcastReceiver(key string) {
 	s.broadcastMutex.Lock()
 	defer s.broadcastMutex.Unlock()
 	c := s.broadcastReceivers[key]
@@ -82,25 +82,28 @@ func (s *server) deleteBroadcastReceiver(key int) {
 	delete(s.broadcastReceivers, key)
 }
 
-func (s *server) broadcast(msg *pb.SyncMessage, except int) {
+func (s *server) broadcast(msg *pb.SyncMessage) {
 	s.broadcastMutex.Lock()
 	defer s.broadcastMutex.Unlock()
-
-	for id, receiver := range s.broadcastReceivers {
-		if id == except {
-			continue
+	go func() {
+		err := s.messages.Handle(msg)
+		if err != nil {
+			log.Error("message handling by store failed", err)
 		}
+	}()
+
+	for _, receiver := range s.broadcastReceivers {
 		receiver <- msg
 	}
 }
 
-func (s *server) saveStopper(id int, stopper doer.Stopper) {
+func (s *server) saveStopper(id string, stopper doer.Stopper) {
 	s.stopMutex.Lock()
 	defer s.stopMutex.Unlock()
 	s.stoppers[id] = stopper
 }
 
-func (s *server) stop(id int) {
+func (s *server) stop(id string) {
 	s.stopMutex.Lock()
 	defer s.stopMutex.Unlock()
 	stopper, found := s.stoppers[id]

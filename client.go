@@ -37,6 +37,8 @@ type Client struct {
 	conn          *grpc.ClientConn
 	client        pb.NodesClient
 
+	connectionStateHandler ConnectionStateHandler
+
 	startSync chan bool
 }
 
@@ -62,7 +64,6 @@ func (c *Client) connect() error {
 }
 
 func (c *Client) sync() {
-	// <- time.After(time.Millisecond*500)
 	if c.isSyncing() {
 		return
 	}
@@ -74,13 +75,14 @@ func (c *Client) sync() {
 			continue
 		}
 		c.work()
+		if c.connectionStateHandler != nil {
+			c.connectionStateHandler.ConnectionState(false)
+		}
 	}
 }
 
 func (c *Client) work() {
 	c.sendCloseSignal = make(chan bool)
-	c.outboundStream = make(chan *pb.SyncMessage, 30)
-	defer close(c.outboundStream)
 
 	c.connectionAttempts++
 
@@ -92,9 +94,14 @@ func (c *Client) work() {
 			log.Error("grpc::msg unconnected", errors.Errorf("%d", status.Code(err)))
 			log.Info("grpc::msg trying again...")
 		}
+		<-time.After(time.Second * 3)
 		return
 	}
 	defer stream.CloseSend()
+
+	if c.connectionStateHandler != nil {
+		c.connectionStateHandler.ConnectionState(true)
+	}
 
 	if c.connectionAttempts > 1 {
 		log.Info("grpc::msg connected", log.Field("after", time.Since(c.unconnectedTime).String()), log.Field("attempts", c.connectionAttempts))
@@ -169,10 +176,6 @@ func (c *Client) setSyncing() {
 }
 
 func (c *Client) Send(msgType string, name string, o interface{}) error {
-	if !c.isSyncing() {
-		return errors.New("not connected")
-	}
-
 	encoded, err := codec.Json.Encode(o)
 	if err != nil {
 		return err
@@ -186,9 +189,6 @@ func (c *Client) Send(msgType string, name string, o interface{}) error {
 }
 
 func (c *Client) SendMsg(msg *pb.SyncMessage) error {
-	if !c.isSyncing() {
-		return errors.New("not connected")
-	}
 	c.outboundStream <- msg
 	return nil
 }
@@ -198,15 +198,21 @@ func (c *Client) Stop() error {
 	if c.conn != nil {
 		return c.conn.Close()
 	}
+	close(c.outboundStream)
 	return nil
+}
+
+func (c *Client) SetConnectionSateHandler(h ConnectionStateHandler) {
+	c.connectionStateHandler = h
 }
 
 func Connect(address string, config *tls.Config, handler pb.MessageHandler) *Client {
 	sc := &Client{
-		serverAddress: address,
-		msgHandler:    handler,
-		tlsConfig:     config,
-		startSync:     make(chan bool),
+		serverAddress:  address,
+		msgHandler:     handler,
+		tlsConfig:      config,
+		startSync:      make(chan bool),
+		outboundStream: make(chan *pb.SyncMessage, 30),
 	}
 	go sc.sync()
 	return sc

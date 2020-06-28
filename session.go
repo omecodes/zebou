@@ -46,7 +46,6 @@ func (s *ServerStreamSession) syncIn(stream pb.Nodes_SyncServer, wg *sync.WaitGr
 			break
 		}
 
-		log.Info("grpc::msg received event")
 		go s.msgHandler.Handle(msg)
 
 		registeredMessages = append(registeredMessages, msg.Id)
