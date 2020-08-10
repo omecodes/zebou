@@ -91,7 +91,7 @@ func (c *Client) work() {
 		c.conn = nil
 		if c.connectionAttempts == 1 {
 			c.unconnectedTime = time.Now()
-			log.Error("grpc::msg unconnected", errors.Errorf("%d", status.Code(err)))
+			log.Error("grpc::msg disconnected", errors.Errorf("%d", status.Code(err)))
 			log.Info("grpc::msg trying again...")
 		}
 		<-time.After(time.Second * 3)
