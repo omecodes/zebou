@@ -3,9 +3,9 @@ package zebou
 import (
 	"context"
 	"crypto/tls"
-	"github.com/omecodes/common/codec"
 	"github.com/omecodes/common/errors"
-	"github.com/omecodes/common/log"
+	"github.com/omecodes/common/utils/codec"
+	"github.com/omecodes/common/utils/log"
 	pb "github.com/omecodes/zebou/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
@@ -91,7 +91,7 @@ func (c *Client) work() {
 		c.conn = nil
 		if c.connectionAttempts == 1 {
 			c.unconnectedTime = time.Now()
-			log.Error("grpc::msg unconnected", errors.Errorf("%d", status.Code(err)))
+			log.Error("grpc::msg disconnected", errors.Errorf("%d", status.Code(err)))
 			log.Info("grpc::msg trying again...")
 		}
 		<-time.After(time.Second * 3)

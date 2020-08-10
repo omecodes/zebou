@@ -2,8 +2,8 @@ package zebou
 
 import (
 	"github.com/google/uuid"
-	"github.com/omecodes/common/doer"
-	"github.com/omecodes/common/log"
+	"github.com/omecodes/common/utils/doer"
+	"github.com/omecodes/common/utils/log"
 	pb "github.com/omecodes/zebou/proto"
 	"google.golang.org/grpc"
 	"net"

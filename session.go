@@ -1,7 +1,7 @@
 package zebou
 
 import (
-	"github.com/omecodes/common/log"
+	"github.com/omecodes/common/utils/log"
 	pb "github.com/omecodes/zebou/proto"
 	"io"
 	"sync"
