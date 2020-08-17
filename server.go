@@ -30,7 +30,7 @@ func Serve(l net.Listener, messages pb.Messages) (doer.Stopper, error) {
 	go func() {
 		err := server.Serve(l)
 		if err != nil {
-			log.Error("grpc::msg serve failed", err)
+			log.Error("grpc::msg serve failed", log.Err(err))
 		}
 	}()
 	return doer.StopFunc(h.Stop), nil
@@ -61,7 +61,7 @@ func (s *server) Handle(msg *pb.SyncMessage) {
 	defer s.broadcastMutex.Unlock()
 	err := s.messages.Handle(msg)
 	if err != nil {
-		log.Error("could not save message", err)
+		log.Error("could not save message", log.Err(err))
 	}
 }
 
@@ -88,7 +88,7 @@ func (s *server) broadcast(msg *pb.SyncMessage) {
 	go func() {
 		err := s.messages.Handle(msg)
 		if err != nil {
-			log.Error("message handling by store failed", err)
+			log.Error("message handling by store failed", log.Err(err))
 		}
 	}()
 
@@ -109,7 +109,7 @@ func (s *server) stop(id string) {
 	stopper, found := s.stoppers[id]
 	if found {
 		err := stopper.Stop()
-		log.Error("grpc::msg stopped session with error", err)
+		log.Error("grpc::msg stopped session with error", log.Err(err))
 		delete(s.stoppers, id)
 	}
 }
@@ -120,7 +120,7 @@ func (s *server) Stop() error {
 	for _, stopper := range s.stoppers {
 		err := stopper.Stop()
 		if err != nil {
-			log.Error("msg::server stop failed", err)
+			log.Error("msg::server stop failed", log.Err(err))
 		}
 	}
 	return nil

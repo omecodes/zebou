@@ -33,7 +33,7 @@ func (s *ServerStreamSession) syncIn(stream pb.Nodes_SyncServer, wg *sync.WaitGr
 		msg, err := stream.Recv()
 		if err != nil {
 			if err != io.EOF {
-				log.Error("grpc::msg receive failed", err)
+				log.Error("grpc::msg receive failed", log.Err(err))
 				s.closed = true
 			}
 			break
@@ -41,7 +41,7 @@ func (s *ServerStreamSession) syncIn(stream pb.Nodes_SyncServer, wg *sync.WaitGr
 
 		err = s.messages.Handle(msg)
 		if err != nil {
-			log.Error("grpc::msg storing failed", err)
+			log.Error("grpc::msg storing failed", log.Err(err))
 			s.closed = true
 			break
 		}
@@ -56,7 +56,7 @@ func (s *ServerStreamSession) syncIn(stream pb.Nodes_SyncServer, wg *sync.WaitGr
 		for _, key := range registeredMessages {
 			err := s.messages.Invalidate(key)
 			if err != nil {
-				log.Error("grpc::msg could not invalidate object", err)
+				log.Error("grpc::msg could not invalidate object", log.Err(err))
 			}
 		}
 	}
@@ -68,7 +68,7 @@ func (s *ServerStreamSession) syncOut(stream pb.Nodes_SyncServer, wg *sync.WaitG
 
 	list, err := s.messages.State()
 	if err != nil {
-		log.Error("grpc::msg sending messages", err)
+		log.Error("grpc::msg sending messages", log.Err(err))
 		return
 	}
 
@@ -76,7 +76,7 @@ func (s *ServerStreamSession) syncOut(stream pb.Nodes_SyncServer, wg *sync.WaitG
 	for _, o := range list {
 		err = stream.SendMsg(o)
 		if err != nil {
-			log.Error("grpc::msg send event", err)
+			log.Error("grpc::msg send event", log.Err(err))
 			s.closed = true
 			return
 		}
@@ -90,7 +90,7 @@ func (s *ServerStreamSession) syncOut(stream pb.Nodes_SyncServer, wg *sync.WaitG
 
 		err := stream.SendMsg(o)
 		if err != nil {
-			log.Error("grpc::msg send event", err)
+			log.Error("grpc::msg send event", log.Err(err))
 		}
 	}
 }

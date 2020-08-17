@@ -91,7 +91,7 @@ func (c *Client) work() {
 		c.conn = nil
 		if c.connectionAttempts == 1 {
 			c.unconnectedTime = time.Now()
-			log.Error("grpc::msg disconnected", errors.Errorf("%d", status.Code(err)))
+			log.Error("grpc::msg disconnected", log.Err(errors.Errorf("%d", status.Code(err))))
 			log.Info("grpc::msg trying again...")
 		}
 		<-time.After(time.Second * 3)
@@ -134,7 +134,7 @@ func (c *Client) send(stream pb.Nodes_SyncClient, wg *sync.WaitGroup) {
 			err := stream.Send(event)
 			if err != nil {
 				if err != io.EOF {
-					log.Error("grpc::msg send event", err)
+					log.Error("grpc::msg send event", log.Err(err))
 				}
 				return
 			}
@@ -150,7 +150,7 @@ func (c *Client) recv(stream pb.Nodes_SyncClient, wg *sync.WaitGroup) {
 			c.sendCloseSignal <- true
 			close(c.sendCloseSignal)
 			if err != io.EOF {
-				log.Error("grpc::msg recv event", err)
+				log.Error("grpc::msg recv event", log.Err(err))
 			}
 			return
 		}
