@@ -59,7 +59,7 @@ func (s *Hub) Sync(stream pb.Nodes_SyncServer) error {
 	defer s.deleteClientSession(id)
 	defer sess.Stop()
 
-	sess.sync()
+	sess.syncIn()
 	return nil
 }
 

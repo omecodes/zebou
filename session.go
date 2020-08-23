@@ -4,7 +4,6 @@ import (
 	"github.com/omecodes/common/utils/log"
 	pb "github.com/omecodes/zebou/proto"
 	"io"
-	"sync"
 )
 
 type clientSession struct {
@@ -16,26 +15,17 @@ type clientSession struct {
 	stream        pb.Nodes_SyncServer
 }
 
-func (c *clientSession) sync() {
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	go c.syncIn(c.stream, wg)
-	wg.Wait()
-}
-
-func (c *clientSession) syncIn(stream pb.Nodes_SyncServer, wg *sync.WaitGroup) {
-	defer wg.Done()
-
+func (c *clientSession) syncIn() {
 	for !c.stopRequested && !c.closed {
-		msg, err := stream.Recv()
+		msg, err := c.stream.Recv()
 		if err != nil {
 			if err != io.EOF {
 				log.Error("grpc::msg receive failed", log.Err(err))
 				c.closed = true
 			}
-			break
+			return
 		}
-		c.handleFunc(msg)
+		go c.handleFunc(msg)
 	}
 }
 
