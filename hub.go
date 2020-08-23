@@ -48,6 +48,8 @@ func (s *Hub) Sync(stream pb.Nodes_SyncServer) error {
 		pi.Address = p.Addr.String()
 	}
 
+	s.handler.NewClient(context.Background(), pi)
+
 	sess := handleClient(stream, func(msg *pb.SyncMessage) {
 		s.handler.OnMessage(context.WithValue(context.Background(), ctxPeer{}, pi), msg)
 	})
