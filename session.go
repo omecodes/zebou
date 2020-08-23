@@ -10,7 +10,7 @@ import (
 type clientHandler struct {
 	info          *PeerInfo
 	hub           *Hub
-	handler       Handler
+	handleFunc    HandleMessageFunc
 	stopRequested bool
 	closed        bool
 	stream        pb.Nodes_SyncServer
@@ -35,7 +35,7 @@ func (c *clientHandler) syncIn(stream pb.Nodes_SyncServer, wg *sync.WaitGroup) {
 			}
 			break
 		}
-		go c.handler.OnMessage(nil, msg)
+		c.handleFunc(msg)
 	}
 }
 
@@ -48,10 +48,11 @@ func (c *clientHandler) Stop() error {
 	return nil
 }
 
-func handleClient(stream pb.Nodes_SyncServer) *clientHandler {
+func handleClient(stream pb.Nodes_SyncServer, broadcastChannel chan *pb.SyncMessage, hf HandleMessageFunc) *clientHandler {
 	s := &clientHandler{}
 	s.stream = stream
 	s.stopRequested = false
 	s.closed = false
+	s.handleFunc = hf
 	return s
 }

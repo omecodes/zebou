@@ -7,6 +7,7 @@ import (
 	"github.com/omecodes/common/utils/log"
 	pb "github.com/omecodes/zebou/proto"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/peer"
 	"net"
 	"sync"
 )
@@ -16,6 +17,7 @@ func Serve(l net.Listener, handler Handler) (*Hub, error) {
 		stopRequested:      false,
 		broadcastReceivers: map[string]chan *pb.SyncMessage{},
 		stoppers:           map[string]doer.Stopper{},
+		handler:            handler,
 	}
 
 	server := grpc.NewServer()
@@ -42,10 +44,24 @@ type Hub struct {
 func (s *Hub) Sync(stream pb.Nodes_SyncServer) error {
 	broadcastReceiver := make(chan *pb.SyncMessage)
 	id := s.saveBroadcastReceiver(broadcastReceiver)
-	sess := handleClient(stream)
+	streamCtx := stream.Context()
+
+	pi := &PeerInfo{ID: id}
+
+	p, ok := peer.FromContext(streamCtx)
+	if ok {
+		pi.Address = p.Addr.String()
+	}
+
+	sess := handleClient(stream, broadcastReceiver, func(msg *pb.SyncMessage) {
+		s.handler.OnMessage(context.WithValue(context.Background(), ctxPeer{}, pi), msg)
+	})
 	s.saveStopper(id, sess)
+
+	defer s.handler.ClientQuit(context.Background(), pi)
 	defer s.deleteBroadcastReceiver(id)
 	defer s.stop(id)
+
 	sess.sync()
 	return nil
 }
