@@ -3,7 +3,6 @@ package zebou
 import (
 	"context"
 	"github.com/google/uuid"
-	"github.com/omecodes/common/utils/doer"
 	"github.com/omecodes/common/utils/log"
 	pb "github.com/omecodes/zebou/proto"
 	"google.golang.org/grpc"
@@ -14,17 +13,16 @@ import (
 
 func Serve(l net.Listener, handler Handler) (*Hub, error) {
 	h := &Hub{
-		stopRequested:      false,
-		broadcastReceivers: map[string]chan *pb.SyncMessage{},
-		stoppers:           map[string]doer.Stopper{},
-		handler:            handler,
+		stopRequested: false,
+		sessions:      map[string]*clientSession{},
+		handler:       handler,
 	}
 
-	server := grpc.NewServer()
-	pb.RegisterNodesServer(server, h)
+	h.server = grpc.NewServer()
+	pb.RegisterNodesServer(h.server, h)
 
 	go func() {
-		err := server.Serve(l)
+		err := h.server.Serve(l)
 		if err != nil {
 			log.Error("grpc::msg serve failed", log.Err(err))
 		}
@@ -33,89 +31,60 @@ func Serve(l net.Listener, handler Handler) (*Hub, error) {
 }
 
 type Hub struct {
-	handler            Handler
-	broadcastMutex     sync.Mutex
-	stopMutex          sync.Mutex
-	stopRequested      bool
-	stoppers           map[string]doer.Stopper
-	broadcastReceivers map[string]chan *pb.SyncMessage
+	handler       Handler
+	sessionsLock  sync.Mutex
+	sessions      map[string]*clientSession
+	server        *grpc.Server
+	stopRequested bool
 }
 
 func (s *Hub) Sync(stream pb.Nodes_SyncServer) error {
-	broadcastReceiver := make(chan *pb.SyncMessage)
-	id := s.saveBroadcastReceiver(broadcastReceiver)
 	streamCtx := stream.Context()
 
+	id := uuid.New().String()
 	pi := &PeerInfo{ID: id}
-
 	p, ok := peer.FromContext(streamCtx)
 	if ok {
 		pi.Address = p.Addr.String()
 	}
 
-	sess := handleClient(stream, broadcastReceiver, func(msg *pb.SyncMessage) {
+	sess := handleClient(stream, func(msg *pb.SyncMessage) {
 		s.handler.OnMessage(context.WithValue(context.Background(), ctxPeer{}, pi), msg)
 	})
-	s.saveStopper(id, sess)
+	s.saveClientSession(id, sess)
 
 	defer s.handler.ClientQuit(context.Background(), pi)
-	defer s.deleteBroadcastReceiver(id)
-	defer s.stop(id)
+	defer s.deleteClientSession(id)
+	defer sess.Stop()
 
 	sess.sync()
 	return nil
 }
 
-func (s *Hub) saveBroadcastReceiver(channel chan *pb.SyncMessage) string {
-	s.broadcastMutex.Lock()
-	defer s.broadcastMutex.Unlock()
-
-	id := uuid.New().String()
-	s.broadcastReceivers[id] = channel
-	return id
+func (s *Hub) saveClientSession(id string, session *clientSession) {
+	s.sessionsLock.Lock()
+	defer s.sessionsLock.Unlock()
+	s.sessions[id] = session
 }
 
-func (s *Hub) deleteBroadcastReceiver(key string) {
-	s.broadcastMutex.Lock()
-	defer s.broadcastMutex.Unlock()
-	c := s.broadcastReceivers[key]
-	defer close(c)
-	delete(s.broadcastReceivers, key)
+func (s *Hub) deleteClientSession(id string) {
+	s.sessionsLock.Lock()
+	defer s.sessionsLock.Unlock()
+	delete(s.sessions, id)
 }
 
 func (s *Hub) Broadcast(ctx context.Context, msg *pb.SyncMessage) {
-	s.broadcastMutex.Lock()
-	defer s.broadcastMutex.Unlock()
-	for _, receiver := range s.broadcastReceivers {
-		receiver <- msg
-	}
-}
+	s.sessionsLock.Lock()
+	defer s.sessionsLock.Unlock()
 
-func (s *Hub) saveStopper(id string, stopper doer.Stopper) {
-	s.stopMutex.Lock()
-	defer s.stopMutex.Unlock()
-	s.stoppers[id] = stopper
-}
-
-func (s *Hub) stop(id string) {
-	s.stopMutex.Lock()
-	defer s.stopMutex.Unlock()
-	stopper, found := s.stoppers[id]
-	if found {
-		err := stopper.Stop()
-		log.Error("grpc::msg stopped session with error", log.Err(err))
-		delete(s.stoppers, id)
+	for id, sess := range s.sessions {
+		err := sess.Send(msg)
+		log.Error("broadcast: failed to send message to peer", log.Err(err), log.Field("peer", id))
 	}
+
 }
 
 func (s *Hub) Stop() error {
-	s.stopMutex.Lock()
-	defer s.stopMutex.Unlock()
-	for _, stopper := range s.stoppers {
-		err := stopper.Stop()
-		if err != nil {
-			log.Error("msg::server stop failed", log.Err(err))
-		}
-	}
+	s.server.Stop()
 	return nil
 }

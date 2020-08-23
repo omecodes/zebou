@@ -7,7 +7,7 @@ import (
 	"sync"
 )
 
-type clientHandler struct {
+type clientSession struct {
 	info          *PeerInfo
 	hub           *Hub
 	handleFunc    HandleMessageFunc
@@ -16,14 +16,14 @@ type clientHandler struct {
 	stream        pb.Nodes_SyncServer
 }
 
-func (c *clientHandler) sync() {
+func (c *clientSession) sync() {
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	go c.syncIn(c.stream, wg)
 	wg.Wait()
 }
 
-func (c *clientHandler) syncIn(stream pb.Nodes_SyncServer, wg *sync.WaitGroup) {
+func (c *clientSession) syncIn(stream pb.Nodes_SyncServer, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	for !c.stopRequested && !c.closed {
@@ -39,17 +39,16 @@ func (c *clientHandler) syncIn(stream pb.Nodes_SyncServer, wg *sync.WaitGroup) {
 	}
 }
 
-func (c *clientHandler) Send(msg *pb.SyncMessage) error {
+func (c *clientSession) Send(msg *pb.SyncMessage) error {
 	return c.stream.SendMsg(msg)
 }
 
-func (c *clientHandler) Stop() error {
+func (c *clientSession) Stop() {
 	c.stopRequested = true
-	return nil
 }
 
-func handleClient(stream pb.Nodes_SyncServer, broadcastChannel chan *pb.SyncMessage, hf HandleMessageFunc) *clientHandler {
-	s := &clientHandler{}
+func handleClient(stream pb.Nodes_SyncServer, hf HandleMessageFunc) *clientSession {
+	s := &clientSession{}
 	s.stream = stream
 	s.stopRequested = false
 	s.closed = false
