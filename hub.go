@@ -79,7 +79,9 @@ func (s *Hub) Broadcast(ctx context.Context, msg *pb.SyncMessage) {
 
 	for id, sess := range s.sessions {
 		err := sess.Send(msg)
-		log.Error("broadcast: failed to send message to peer", log.Err(err), log.Field("peer", id))
+		if err != nil {
+			log.Error("broadcast: failed to send message to peer", log.Err(err), log.Field("peer", id))
+		}
 	}
 
 }
