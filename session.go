@@ -5,108 +5,53 @@ import (
 	pb "github.com/omecodes/zebou/proto"
 	"io"
 	"sync"
-	"time"
 )
 
-type ServerStreamSession struct {
-	msgHandler       pb.MessageHandler
-	messages         pb.Messages
-	broadcastChannel chan *pb.SyncMessage
-	stopRequested    bool
-	closed           bool
-	stream           pb.Nodes_SyncServer
+type clientHandler struct {
+	info          *PeerInfo
+	hub           *Hub
+	handler       Handler
+	stopRequested bool
+	closed        bool
+	stream        pb.Nodes_SyncServer
 }
 
-func (s *ServerStreamSession) sync() {
+func (c *clientHandler) sync() {
 	wg := &sync.WaitGroup{}
-	wg.Add(2)
-	go s.syncIn(s.stream, wg)
-	go s.syncOut(s.stream, wg)
+	wg.Add(1)
+	go c.syncIn(c.stream, wg)
 	wg.Wait()
 }
 
-func (s *ServerStreamSession) syncIn(stream pb.Nodes_SyncServer, wg *sync.WaitGroup) {
+func (c *clientHandler) syncIn(stream pb.Nodes_SyncServer, wg *sync.WaitGroup) {
 	defer wg.Done()
-	var registeredMessages []string
 
-	for !s.stopRequested && !s.closed {
+	for !c.stopRequested && !c.closed {
 		msg, err := stream.Recv()
 		if err != nil {
 			if err != io.EOF {
 				log.Error("grpc::msg receive failed", log.Err(err))
-				s.closed = true
+				c.closed = true
 			}
 			break
 		}
-
-		err = s.messages.Handle(msg)
-		if err != nil {
-			log.Error("grpc::msg storing failed", log.Err(err))
-			s.closed = true
-			break
-		}
-
-		go s.msgHandler.Handle(msg)
-
-		registeredMessages = append(registeredMessages, msg.Id)
-	}
-
-	log.Info("grpc::msg closing inbound traffic")
-	if !s.stopRequested {
-		for _, key := range registeredMessages {
-			err := s.messages.Invalidate(key)
-			if err != nil {
-				log.Error("grpc::msg could not invalidate object", log.Err(err))
-			}
-		}
+		go c.handler.OnMessage(nil, msg)
 	}
 }
 
-func (s *ServerStreamSession) syncOut(stream pb.Nodes_SyncServer, wg *sync.WaitGroup) {
-	defer wg.Done()
-	<-time.After(time.Second)
-
-	list, err := s.messages.State()
-	if err != nil {
-		log.Error("grpc::msg sending messages", log.Err(err))
-		return
-	}
-
-	log.Info("grpc::msg sending all messages from store")
-	for _, o := range list {
-		err = stream.SendMsg(o)
-		if err != nil {
-			log.Error("grpc::msg send event", log.Err(err))
-			s.closed = true
-			return
-		}
-	}
-
-	for !s.stopRequested && !s.closed {
-		o, open := <-s.broadcastChannel
-		if !open {
-			return
-		}
-
-		err := stream.SendMsg(o)
-		if err != nil {
-			log.Error("grpc::msg send event", log.Err(err))
-		}
-	}
+func (c *clientHandler) Send(msg *pb.SyncMessage) error {
+	return c.stream.SendMsg(msg)
 }
 
-func (s *ServerStreamSession) Stop() error {
-	s.stopRequested = true
+func (c *clientHandler) Stop() error {
+	c.stopRequested = true
 	return nil
 }
 
-func NewServerStreamSession(stream pb.Nodes_SyncServer, broadcastChannel chan *pb.SyncMessage, messages pb.Messages, handler pb.MessageHandler) *ServerStreamSession {
-	s := &ServerStreamSession{}
+func handleClient(stream pb.Nodes_SyncServer) *clientHandler {
+	s := &clientHandler{}
 	s.stream = stream
-	s.messages = messages
-	s.broadcastChannel = broadcastChannel
 	s.stopRequested = false
 	s.closed = false
-	s.msgHandler = handler
 	return s
 }

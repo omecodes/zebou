@@ -1,6 +1,7 @@
 package zebou
 
 import (
+	"context"
 	"github.com/google/uuid"
 	"github.com/omecodes/common/utils/doer"
 	"github.com/omecodes/common/utils/log"
@@ -10,15 +11,8 @@ import (
 	"sync"
 )
 
-type sessionMessageHandlerFunc func(from int, msg *pb.SyncMessage)
-
-func Serve(l net.Listener, messages pb.Messages) (doer.Stopper, error) {
-	if messages == nil {
-		messages = newMemMessageStore()
-	}
-
-	h := &server{
-		messages:           messages,
+func Serve(l net.Listener, handler Handler) (*Hub, error) {
+	h := &Hub{
 		stopRequested:      false,
 		broadcastReceivers: map[string]chan *pb.SyncMessage{},
 		stoppers:           map[string]doer.Stopper{},
@@ -33,22 +27,22 @@ func Serve(l net.Listener, messages pb.Messages) (doer.Stopper, error) {
 			log.Error("grpc::msg serve failed", log.Err(err))
 		}
 	}()
-	return doer.StopFunc(h.Stop), nil
+	return h, nil
 }
 
-type server struct {
+type Hub struct {
+	handler            Handler
 	broadcastMutex     sync.Mutex
 	stopMutex          sync.Mutex
-	messages           pb.Messages
 	stopRequested      bool
 	stoppers           map[string]doer.Stopper
 	broadcastReceivers map[string]chan *pb.SyncMessage
 }
 
-func (s *server) Sync(stream pb.Nodes_SyncServer) error {
+func (s *Hub) Sync(stream pb.Nodes_SyncServer) error {
 	broadcastReceiver := make(chan *pb.SyncMessage)
 	id := s.saveBroadcastReceiver(broadcastReceiver)
-	sess := NewServerStreamSession(stream, broadcastReceiver, s.messages, pb.MessageHandlerFunc(s.Handle))
+	sess := handleClient(stream)
 	s.saveStopper(id, sess)
 	defer s.deleteBroadcastReceiver(id)
 	defer s.stop(id)
@@ -56,16 +50,7 @@ func (s *server) Sync(stream pb.Nodes_SyncServer) error {
 	return nil
 }
 
-func (s *server) Handle(msg *pb.SyncMessage) {
-	s.broadcastMutex.Lock()
-	defer s.broadcastMutex.Unlock()
-	err := s.messages.Handle(msg)
-	if err != nil {
-		log.Error("could not save message", log.Err(err))
-	}
-}
-
-func (s *server) saveBroadcastReceiver(channel chan *pb.SyncMessage) string {
+func (s *Hub) saveBroadcastReceiver(channel chan *pb.SyncMessage) string {
 	s.broadcastMutex.Lock()
 	defer s.broadcastMutex.Unlock()
 
@@ -74,7 +59,7 @@ func (s *server) saveBroadcastReceiver(channel chan *pb.SyncMessage) string {
 	return id
 }
 
-func (s *server) deleteBroadcastReceiver(key string) {
+func (s *Hub) deleteBroadcastReceiver(key string) {
 	s.broadcastMutex.Lock()
 	defer s.broadcastMutex.Unlock()
 	c := s.broadcastReceivers[key]
@@ -82,28 +67,21 @@ func (s *server) deleteBroadcastReceiver(key string) {
 	delete(s.broadcastReceivers, key)
 }
 
-func (s *server) broadcast(msg *pb.SyncMessage) {
+func (s *Hub) Broadcast(ctx context.Context, msg *pb.SyncMessage) {
 	s.broadcastMutex.Lock()
 	defer s.broadcastMutex.Unlock()
-	go func() {
-		err := s.messages.Handle(msg)
-		if err != nil {
-			log.Error("message handling by store failed", log.Err(err))
-		}
-	}()
-
 	for _, receiver := range s.broadcastReceivers {
 		receiver <- msg
 	}
 }
 
-func (s *server) saveStopper(id string, stopper doer.Stopper) {
+func (s *Hub) saveStopper(id string, stopper doer.Stopper) {
 	s.stopMutex.Lock()
 	defer s.stopMutex.Unlock()
 	s.stoppers[id] = stopper
 }
 
-func (s *server) stop(id string) {
+func (s *Hub) stop(id string) {
 	s.stopMutex.Lock()
 	defer s.stopMutex.Unlock()
 	stopper, found := s.stoppers[id]
@@ -114,7 +92,7 @@ func (s *server) stop(id string) {
 	}
 }
 
-func (s *server) Stop() error {
+func (s *Hub) Stop() error {
 	s.stopMutex.Lock()
 	defer s.stopMutex.Unlock()
 	for _, stopper := range s.stoppers {
@@ -124,35 +102,4 @@ func (s *server) Stop() error {
 		}
 	}
 	return nil
-}
-
-type memMessageStore struct {
-	store *sync.Map
-}
-
-func (m *memMessageStore) Handle(msg *pb.SyncMessage) error {
-	m.store.Store(msg.Id, msg)
-	return nil
-}
-
-func (m *memMessageStore) State() ([]*pb.SyncMessage, error) {
-	var list []*pb.SyncMessage
-
-	m.store.Range(func(key, value interface{}) bool {
-		list = append(list, value.(*pb.SyncMessage))
-		return true
-	})
-
-	return list, nil
-}
-
-func (m *memMessageStore) Invalidate(id string) error {
-	m.store.Delete(id)
-	return nil
-}
-
-func newMemMessageStore() *memMessageStore {
-	s := new(memMessageStore)
-	s.store = &sync.Map{}
-	return s
 }

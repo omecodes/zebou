@@ -17,6 +17,7 @@ import (
 )
 
 type Client struct {
+	info         *PeerInfo
 	syncMutex    sync.Mutex
 	handlersLock sync.Mutex
 
@@ -25,9 +26,8 @@ type Client struct {
 
 	sendCloseSignal chan bool
 	outboundStream  chan *pb.SyncMessage
+	inboundStream   chan *pb.SyncMessage
 	// messageHandlers map[string]pb.MessageHandler
-
-	msgHandler pb.MessageHandler
 
 	syncing       bool
 	stopRequested bool
@@ -154,11 +154,7 @@ func (c *Client) recv(stream pb.Nodes_SyncClient, wg *sync.WaitGroup) {
 			}
 			return
 		}
-
-		if c.msgHandler != nil {
-			go c.msgHandler.Handle(msg)
-		}
-
+		c.inboundStream <- msg
 		log.Info("grpc::msg new event", log.Field("type", msg.Type), log.Field("id", msg.Id))
 	}
 }
@@ -175,6 +171,11 @@ func (c *Client) setSyncing() {
 	c.syncing = true
 }
 
+func (c *Client) SendMsg(msg *pb.SyncMessage) error {
+	c.outboundStream <- msg
+	return nil
+}
+
 func (c *Client) Send(msgType string, name string, o interface{}) error {
 	encoded, err := codec.Json.Encode(o)
 	if err != nil {
@@ -188,9 +189,12 @@ func (c *Client) Send(msgType string, name string, o interface{}) error {
 	return nil
 }
 
-func (c *Client) SendMsg(msg *pb.SyncMessage) error {
-	c.outboundStream <- msg
-	return nil
+func (c *Client) GetMessage() (*pb.SyncMessage, error) {
+	m, open := <-c.inboundStream
+	if !open {
+		return nil, io.ErrClosedPipe
+	}
+	return m, nil
 }
 
 func (c *Client) Stop() error {
@@ -206,10 +210,9 @@ func (c *Client) SetConnectionSateHandler(h ConnectionStateHandler) {
 	c.connectionStateHandler = h
 }
 
-func Connect(address string, config *tls.Config, handler pb.MessageHandler) *Client {
+func Connect(address string, config *tls.Config) *Client {
 	sc := &Client{
 		serverAddress:  address,
-		msgHandler:     handler,
 		tlsConfig:      config,
 		startSync:      make(chan bool),
 		outboundStream: make(chan *pb.SyncMessage, 30),
