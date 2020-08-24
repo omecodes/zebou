@@ -216,6 +216,7 @@ func Connect(address string, config *tls.Config) *Client {
 		tlsConfig:      config,
 		startSync:      make(chan bool),
 		outboundStream: make(chan *pb.SyncMessage, 30),
+		inboundStream:  make(chan *pb.SyncMessage, 30),
 	}
 	go sc.sync()
 	return sc

@@ -2,6 +2,8 @@ package zebou
 
 import (
 	"context"
+	"github.com/omecodes/common/errors"
+	"github.com/omecodes/common/utils/log"
 	pb "github.com/omecodes/zebou/proto"
 )
 
@@ -12,6 +14,7 @@ type PeerInfo struct {
 
 type ctxPeer struct{}
 type ctxClient struct{}
+type ctxClientStream struct{}
 type ctxHub struct{}
 
 func hub(ctx context.Context) *Hub {
@@ -39,9 +42,22 @@ func Peer(ctx context.Context) *PeerInfo {
 }
 
 func Send(ctx context.Context, msg *pb.SyncMessage) error {
-	return nil
+	o := ctx.Value(ctxClientStream{})
+	if o == nil {
+		log.Error("Call zebou.send with wrong context. Missing client stream")
+		return errors.Internal
+	}
+	stream := o.(pb.Nodes_SyncServer)
+	return stream.Send(msg)
 }
 
 func Broadcast(ctx context.Context, msg *pb.SyncMessage) error {
+	o := ctx.Value(ctxClientStream{})
+	if o == nil {
+		log.Error("Call zebou.send with wrong context. Missing hub")
+		return errors.Internal
+	}
+	hub := o.(*Hub)
+	hub.Broadcast(ctx, msg)
 	return nil
 }
