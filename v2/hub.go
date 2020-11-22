@@ -32,9 +32,10 @@ func Serve(l net.Listener, handler Handler) (*Hub, error) {
 type Hub struct {
 	UnimplementedNodesServer
 	handler       Handler
-	sessionsLock  sync.Mutex
+	sessionsMutex sync.Mutex
 	sessions      map[string]*clientSession
 	server        *grpc.Server
+	err           error
 	stopRequested bool
 }
 
@@ -67,20 +68,31 @@ func (s *Hub) Sync(stream Nodes_SyncServer) error {
 }
 
 func (s *Hub) saveClientSession(id string, session *clientSession) {
-	s.sessionsLock.Lock()
-	defer s.sessionsLock.Unlock()
+	s.sessionsMutex.Lock()
+	defer s.sessionsMutex.Unlock()
 	s.sessions[id] = session
 }
 
+func (s *Hub) getClientSession(id string) (*clientSession, error) {
+	s.sessionsMutex.Lock()
+	defer s.sessionsMutex.Unlock()
+	sess, found := s.sessions[id]
+	if !found {
+		return nil, SessionNotFound
+	}
+	return sess, nil
+}
+
 func (s *Hub) deleteClientSession(id string) {
-	s.sessionsLock.Lock()
-	defer s.sessionsLock.Unlock()
+	s.sessionsMutex.Lock()
+	defer s.sessionsMutex.Unlock()
 	delete(s.sessions, id)
 }
 
+// Broadcast dispatches msg
 func (s *Hub) Broadcast(ctx context.Context, msg *ZeMsg) {
-	s.sessionsLock.Lock()
-	defer s.sessionsLock.Unlock()
+	s.sessionsMutex.Lock()
+	defer s.sessionsMutex.Unlock()
 
 	for id, sess := range s.sessions {
 		err := sess.Send(msg)
@@ -88,10 +100,52 @@ func (s *Hub) Broadcast(ctx context.Context, msg *ZeMsg) {
 			log.Error("broadcast: failed to send message to peer", log.Err(err), log.Field("peer", id))
 		}
 	}
-
 }
 
+// SendTo sends a message to the client associated with id
+func (s *Hub) SendTo(id string, msg *ZeMsg) error {
+	session, err := s.getClientSession(id)
+	if err != nil {
+		return err
+	}
+	return session.Send(msg)
+}
+
+// Send sends a message to the client associated with context
+// It loads peer info in context to identify client
+func (s *Hub) Send(ctx context.Context, msg *ZeMsg) error {
+	p := Peer(ctx)
+	if p == nil {
+		return NoPeerFromContext
+	}
+	return s.SendTo(p.ID, msg)
+}
+
+// ClientSendChannelFromContext returns the client session associated with peer info in context
+func (s *Hub) ClientSendChannelFromContext(ctx context.Context) (Sender, error) {
+	p := Peer(ctx)
+	if p == nil {
+		return nil, NoPeerFromContext
+	}
+	return s.getClientSession(p.ID)
+}
+
+// GetClientSendChannel returns the client session associated with id
+func (s *Hub) GetClientSendChannel(id string) (Sender, error) {
+	return s.getClientSession(id)
+}
+
+// Stop stops the listening for connections and free all current sessions
 func (s *Hub) Stop() error {
 	s.server.Stop()
+	s.stopSessions()
 	return nil
+}
+
+func (s *Hub) stopSessions() {
+	s.sessionsMutex.Lock()
+	defer s.sessionsMutex.Unlock()
+	for _, s := range s.sessions {
+		s.Stop()
+	}
 }
