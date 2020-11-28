@@ -6,7 +6,6 @@ import (
 	"github.com/omecodes/common/errors"
 	"github.com/omecodes/common/utils/codec"
 	"github.com/omecodes/common/utils/log"
-	pb "github.com/omecodes/zebou/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
@@ -25,8 +24,8 @@ type Client struct {
 	unconnectedTime    time.Time
 
 	sendCloseSignal chan bool
-	outboundStream  chan *pb.SyncMessage
-	inboundStream   chan *pb.SyncMessage
+	outboundStream  chan *ZeMsg
+	inboundStream   chan *ZeMsg
 	// messageHandlers map[string]pb.MessageHandler
 
 	syncing       bool
@@ -35,7 +34,7 @@ type Client struct {
 	serverAddress string
 	tlsConfig     *tls.Config
 	conn          *grpc.ClientConn
-	client        pb.NodesClient
+	client        NodesClient
 
 	connectionStateHandler ConnectionStateHandler
 
@@ -59,7 +58,7 @@ func (c *Client) connect() error {
 	if err != nil {
 		return err
 	}
-	c.client = pb.NewNodesClient(c.conn)
+	c.client = NewNodesClient(c.conn)
 	return nil
 }
 
@@ -117,7 +116,7 @@ func (c *Client) work() {
 	wg.Wait()
 }
 
-func (c *Client) send(stream pb.Nodes_SyncClient, wg *sync.WaitGroup) {
+func (c *Client) send(stream Nodes_SyncClient, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	for !c.stopRequested {
@@ -142,7 +141,7 @@ func (c *Client) send(stream pb.Nodes_SyncClient, wg *sync.WaitGroup) {
 	}
 }
 
-func (c *Client) recv(stream pb.Nodes_SyncClient, wg *sync.WaitGroup) {
+func (c *Client) recv(stream Nodes_SyncClient, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for !c.stopRequested {
 		msg, err := stream.Recv()
@@ -171,7 +170,7 @@ func (c *Client) setSyncing() {
 	c.syncing = true
 }
 
-func (c *Client) SendMsg(msg *pb.SyncMessage) error {
+func (c *Client) SendMsg(msg *ZeMsg) error {
 	c.outboundStream <- msg
 	return nil
 }
@@ -181,7 +180,7 @@ func (c *Client) Send(msgType string, name string, o interface{}) error {
 	if err != nil {
 		return err
 	}
-	c.outboundStream <- &pb.SyncMessage{
+	c.outboundStream <- &ZeMsg{
 		Type:    msgType,
 		Id:      name,
 		Encoded: encoded,
@@ -189,7 +188,7 @@ func (c *Client) Send(msgType string, name string, o interface{}) error {
 	return nil
 }
 
-func (c *Client) GetMessage() (*pb.SyncMessage, error) {
+func (c *Client) GetMessage() (*ZeMsg, error) {
 	m, open := <-c.inboundStream
 	if !open {
 		return nil, io.ErrClosedPipe
@@ -215,8 +214,8 @@ func Connect(address string, config *tls.Config) *Client {
 		serverAddress:  address,
 		tlsConfig:      config,
 		startSync:      make(chan bool),
-		outboundStream: make(chan *pb.SyncMessage, 30),
-		inboundStream:  make(chan *pb.SyncMessage, 30),
+		outboundStream: make(chan *ZeMsg, 30),
+		inboundStream:  make(chan *ZeMsg, 30),
 	}
 	go sc.sync()
 	return sc

@@ -2,7 +2,6 @@ package zebou
 
 import (
 	"github.com/omecodes/common/utils/log"
-	pb "github.com/omecodes/zebou/proto"
 	"io"
 )
 
@@ -12,7 +11,7 @@ type clientSession struct {
 	handleFunc    HandleMessageFunc
 	stopRequested bool
 	closed        bool
-	stream        pb.Nodes_SyncServer
+	stream        Nodes_SyncServer
 }
 
 func (c *clientSession) syncIn() {
@@ -29,7 +28,7 @@ func (c *clientSession) syncIn() {
 	}
 }
 
-func (c *clientSession) Send(msg *pb.SyncMessage) error {
+func (c *clientSession) Send(msg *ZeMsg) error {
 	return c.stream.SendMsg(msg)
 }
 
@@ -37,7 +36,7 @@ func (c *clientSession) Stop() {
 	c.stopRequested = true
 }
 
-func handleClient(stream pb.Nodes_SyncServer, hf HandleMessageFunc) *clientSession {
+func handleClient(stream Nodes_SyncServer, hf HandleMessageFunc) *clientSession {
 	s := &clientSession{}
 	s.stream = stream
 	s.stopRequested = false

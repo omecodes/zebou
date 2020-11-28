@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-option go_package = "github.com/omecodes/libome/v2/ome.proto;zebou";
+option go_package = "github.com/omecodes/libome/ome.proto;zebou";
 
 message ZeMsg {
   string type = 1;
