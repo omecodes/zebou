@@ -56,7 +56,7 @@ func (c *Client) dial() error {
 	var err error
 	c.conn, err = grpc.Dial(c.serverAddress, opts...)
 	if err != nil {
-		log.Error("zebou::client could not reach the server", log.Field("at", c.serverAddress))
+		log.Error("zebou • could not reach the server", log.Field("at", c.serverAddress))
 		return err
 	}
 	c.client = NewNodesClient(c.conn)
@@ -65,7 +65,7 @@ func (c *Client) dial() error {
 
 func (c *Client) sync() {
 	if c.isSyncing() {
-		log.Info("zebou::client called sync while already syncing")
+		log.Info("zebou • called sync while already syncing")
 		return
 	}
 
@@ -94,15 +94,15 @@ func (c *Client) work() {
 		c.conn = nil
 		if c.connectionAttempts == 1 {
 			c.unconnectedTime = time.Now()
-			log.Error("grpc::msg disconnected", log.Err(errors.Errorf("%d", status.Code(err))))
-			log.Info("grpc::msg trying again...")
+			log.Error("zebou • disconnected", log.Err(errors.Errorf("%d", status.Code(err))))
+			log.Info("zebou • trying again...")
 		}
 		<-time.After(time.Second * 3)
 		return
 	}
 	defer func() {
 		if err := stream.CloseSend(); err != nil {
-			log.Error("grpc stream closing error", log.Err(err))
+			log.Error("zebou • grpc stream closing error", log.Err(err))
 		}
 	}()
 
@@ -112,9 +112,9 @@ func (c *Client) work() {
 	}
 
 	if c.connectionAttempts > 1 {
-		log.Info("grpc::msg connected", log.Field("after", time.Since(c.unconnectedTime).String()), log.Field("attempts", c.connectionAttempts))
+		log.Info("zebou • connected", log.Field("after", time.Since(c.unconnectedTime).String()), log.Field("attempts", c.connectionAttempts))
 	} else {
-		log.Info("grpc::msg connected")
+		log.Info("zebou • connected")
 	}
 	c.connectionAttempts = 0
 
@@ -128,13 +128,13 @@ func (c *Client) work() {
 func (c *Client) send(stream Nodes_SyncClient, wg *sync.WaitGroup) {
 	defer wg.Done()
 	defer func() {
-		log.Info("zebou::send routine done")
+		log.Info("zebou • send routine done")
 	}()
 
 	for !c.stopRequested {
 		select {
 		case <-c.sendCloseSignal:
-			log.Info("grpc::msg stop send")
+			log.Info("zebou • received signal to stop send routine")
 			return
 
 		case event, open := <-c.outboundStream:
@@ -145,7 +145,7 @@ func (c *Client) send(stream Nodes_SyncClient, wg *sync.WaitGroup) {
 			err := stream.Send(event)
 			if err != nil {
 				if err != io.EOF {
-					log.Error("grpc::msg send event", log.Err(err))
+					log.Error("zebou • failed to send event", log.Err(err))
 				}
 				return
 			}
@@ -156,7 +156,7 @@ func (c *Client) send(stream Nodes_SyncClient, wg *sync.WaitGroup) {
 func (c *Client) recv(stream Nodes_SyncClient, wg *sync.WaitGroup) {
 	defer wg.Done()
 	defer func() {
-		log.Info("zebou::recv routine done")
+		log.Info("zebou • recv routine done")
 	}()
 
 	for !c.stopRequested {
@@ -165,12 +165,12 @@ func (c *Client) recv(stream Nodes_SyncClient, wg *sync.WaitGroup) {
 			c.sendCloseSignal <- true
 			close(c.sendCloseSignal)
 			if err != io.EOF {
-				log.Error("grpc::msg recv event", log.Err(err))
+				log.Error("zebou • recv event", log.Err(err))
 			}
 			return
 		}
 		c.inboundStream <- msg
-		log.Info("grpc::msg new event", log.Field("type", msg.Type), log.Field("id", msg.Id))
+		log.Info("zebou • new event", log.Field("type", msg.Type), log.Field("id", msg.Id))
 	}
 }
 
