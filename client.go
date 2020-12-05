@@ -41,7 +41,7 @@ type Client struct {
 	startSync chan bool
 }
 
-func (c *Client) connect() error {
+func (c *Client) dial() error {
 	if c.conn != nil && c.conn.GetState() == connectivity.Ready {
 		return nil
 	}
@@ -56,6 +56,7 @@ func (c *Client) connect() error {
 	var err error
 	c.conn, err = grpc.Dial(c.serverAddress, opts...)
 	if err != nil {
+		log.Error("zebou::client could not reach the server", log.Field("at", c.serverAddress))
 		return err
 	}
 	c.client = NewNodesClient(c.conn)
@@ -64,12 +65,15 @@ func (c *Client) connect() error {
 
 func (c *Client) sync() {
 	if c.isSyncing() {
+		log.Info("zebou::client called sync while already syncing")
 		return
 	}
+
 	c.setSyncing()
 	for !c.stopRequested {
-		err := c.connect()
+		err := c.dial()
 		if err != nil {
+			log.Error("zebou::dial failed to reach server")
 			time.After(time.Second * 2)
 			continue
 		}
@@ -96,8 +100,13 @@ func (c *Client) work() {
 		<-time.After(time.Second * 3)
 		return
 	}
-	defer stream.CloseSend()
+	defer func() {
+		if err := stream.CloseSend(); err != nil {
+			log.Error("grpc stream closing error", log.Err(err))
+		}
+	}()
 
+	// Here we are sure gRPC stream is open
 	if c.connectionStateHandler != nil {
 		c.connectionStateHandler.ConnectionState(true)
 	}
@@ -118,6 +127,9 @@ func (c *Client) work() {
 
 func (c *Client) send(stream Nodes_SyncClient, wg *sync.WaitGroup) {
 	defer wg.Done()
+	defer func() {
+		log.Info("zebou::send routine done")
+	}()
 
 	for !c.stopRequested {
 		select {
@@ -143,6 +155,10 @@ func (c *Client) send(stream Nodes_SyncClient, wg *sync.WaitGroup) {
 
 func (c *Client) recv(stream Nodes_SyncClient, wg *sync.WaitGroup) {
 	defer wg.Done()
+	defer func() {
+		log.Info("zebou::recv routine done")
+	}()
+
 	for !c.stopRequested {
 		msg, err := stream.Recv()
 		if err != nil {
@@ -209,7 +225,11 @@ func (c *Client) SetConnectionSateHandler(h ConnectionStateHandler) {
 	c.connectionStateHandler = h
 }
 
-func Connect(address string, config *tls.Config) *Client {
+func (c *Client) Connect() {
+	go c.sync()
+}
+
+func NewClient(address string, config *tls.Config) *Client {
 	sc := &Client{
 		serverAddress:  address,
 		tlsConfig:      config,
@@ -217,6 +237,5 @@ func Connect(address string, config *tls.Config) *Client {
 		outboundStream: make(chan *ZeMsg, 30),
 		inboundStream:  make(chan *ZeMsg, 30),
 	}
-	go sc.sync()
 	return sc
 }
