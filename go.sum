@@ -241,6 +241,8 @@ github.com/omecodes/common v0.0.0-20201107101523-fe88c58889ab h1:WCkfo2FtFRZhQjb
 github.com/omecodes/common v0.0.0-20201107101523-fe88c58889ab/go.mod h1:butIVSEAmikWryEn/Tu4hYrP1WhRgXHhNwvgOlJmNrk=
 github.com/omecodes/common v0.0.0-20201203182603-a18355eb1bff h1:JEeIjSjnZfXQSvqxmkyKddBPJ5eIDp8fOVu/VfpRHp0=
 github.com/omecodes/common v0.0.0-20201203182603-a18355eb1bff/go.mod h1:ORHcmOlnZMs77fvBLp41cuh0R3bOw/e+2jaoIxN0WP0=
+github.com/omecodes/common v0.0.0-20201205124409-0a391e4b4c08 h1:cw7bAWTQwcV4w2A7HvO89TnbvR/YvWLlOyosyPjYDY8=
+github.com/omecodes/common v0.0.0-20201205124409-0a391e4b4c08/go.mod h1:ORHcmOlnZMs77fvBLp41cuh0R3bOw/e+2jaoIxN0WP0=
 github.com/omecodes/libome v0.0.0-20201107100428-c853d9b637a8/go.mod h1:4Owj3b0Zn3R1TryMpiCIyIoLvm82xaq19ddJduJr/p8=
 github.com/omecodes/libome v0.0.0-20201128214815-2b3f03af9fa6/go.mod h1:zWK7ZcUVGB+F7XO5fSkwzypxtHjMM05UAPcwpnd+BcI=
 github.com/opentracing/opentracing-go v1.1.0/go.mod h1:UkNAQd3GIcIGf0SeVgPpRdFStlNbqXla1AfSYxPUl2o=
