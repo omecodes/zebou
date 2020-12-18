@@ -97,9 +97,9 @@ func (s *Hub) Broadcast(ctx context.Context, msg *ZeMsg) {
 	for id, sess := range s.sessions {
 		err := sess.Send(msg)
 		if err != nil {
-			log.Error("zebou hub • broadcast failed to send message to peer", log.Err(err), log.Field("peer", id))
+			log.Error("zebou hub • broadcast › failed to send message to peer", log.Err(err), log.Field("peer", id))
 		} else {
-			log.Info("zebou hub • broadcast ›  message sent", log.Err(err), log.Field("to", id))
+			log.Info("zebou hub • broadcast ›  message sent", log.Field("to", id))
 		}
 	}
 }
