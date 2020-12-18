@@ -19,7 +19,7 @@ func (c *clientSession) syncIn() {
 		msg, err := c.stream.Recv()
 		if err != nil {
 			if err != io.EOF {
-				log.Error("grpc::msg receive failed", log.Err(err))
+				log.Error("zebou session •  receive failed", log.Err(err))
 				c.closed = true
 			}
 			return

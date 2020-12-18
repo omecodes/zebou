@@ -23,7 +23,7 @@ func Serve(l net.Listener, handler Handler) (*Hub, error) {
 	go func() {
 		err := h.server.Serve(l)
 		if err != nil {
-			log.Error("grpc::msg serve failed", log.Err(err))
+			log.Error("zebou hub • serve failed", log.Err(err))
 		}
 	}()
 	return h, nil
@@ -97,7 +97,9 @@ func (s *Hub) Broadcast(ctx context.Context, msg *ZeMsg) {
 	for id, sess := range s.sessions {
 		err := sess.Send(msg)
 		if err != nil {
-			log.Error("broadcast: failed to send message to peer", log.Err(err), log.Field("peer", id))
+			log.Error("zebou hub • broadcast failed to send message to peer", log.Err(err), log.Field("peer", id))
+		} else {
+			log.Info("zebou hub • broadcast ›  message sent", log.Err(err), log.Field("to", id))
 		}
 	}
 }
