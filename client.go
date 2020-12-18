@@ -165,12 +165,12 @@ func (c *Client) recv(stream Nodes_SyncClient, wg *sync.WaitGroup) {
 			c.sendCloseSignal <- true
 			close(c.sendCloseSignal)
 			if err != io.EOF {
-				log.Error("zebou • recv event", log.Err(err))
+				log.Error("zebou • recv message", log.Err(err))
 			}
 			return
 		}
 		c.inboundStream <- msg
-		log.Info("zebou • new event", log.Field("type", msg.Type), log.Field("id", msg.Id))
+		log.Info("zebou • new message", log.Field("type", msg.Type), log.Field("id", msg.Id))
 	}
 }
 
